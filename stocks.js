@@ -1,38 +1,73 @@
+require('dotenv').config(); // Set HEROKU_API=https://generic709.herokuapp.com
+                            // npm install dotenv
+
 const readline = require('readline');
 const tickers = require('./tickers');
-let count = 0, columnwidth = 20, rows = 30;
-let startTime = Date.now();
-let randchars = ['*','%','$','&','@','!','^','~','+','?','/','|','<','>'];
+
+const API_URL = process.env.HEROKU_API;
+const columnWidth = 20;
+const rowsPerColumn = 30;
+const statusLine = 40;
+const dataLogLine = 45;
+const startTime = Date.now();
+const specialChars = ['*', '%', '$', '&', '@', '!', '^', '~', '+', '?', '/', '|', '<', '>'];
+let fetchCount = 0;
+
 console.clear();
-function drawScreen() {
-  for (i = 0; i < tickers.length; i++) {
-    let k = Math.floor(i / rows);
-    readline.cursorTo(process.stdout, k*columnwidth, i-rows*k);
-    let dashes = "-".repeat(columnwidth - tickers[i].length)
-    process.stdout.write(`\x1b[33m${tickers[i]}${dashes}`);
-  }};
-drawScreen();
-readline.cursorTo(process.stdout,0,40);
-console.log(" ");
-setInterval(grab, 500);
-async function grab() {
-  for (const singleticker of tickers) {
-    const res1 = await fetch(`https://generic709.herokuapp.com/stockc/${singleticker}`)
+
+function drawTickers() {
+  for (let i = 0; i < tickers.length; i++) {
+    const column = Math.floor(i / rowsPerColumn);
+    const row = i % rowsPerColumn;
+    const label = tickers[i];
+    const padding = '-'.repeat(columnWidth - label.length);
+    readline.cursorTo(process.stdout, column * columnWidth, row);
+    process.stdout.write(`\x1b[33m${label}${padding}`);
+  }
+}
+
+function logStats() {
+  const elapsed = (Date.now() - startTime) / 1000;
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = String(Math.floor(elapsed % 60)).padStart(2, '0');
+  const rate = Math.floor(fetchCount / elapsed);
+
+  readline.cursorTo(process.stdout, 3, dataLogLine);
+  process.stdout.write(`Data Received: ${fetchCount}`);
+  readline.cursorTo(process.stdout, 3, dataLogLine + 1);
+  process.stdout.write(`Time Elapsed: ${minutes}:${seconds}`);
+  readline.cursorTo(process.stdout, 3, dataLogLine + 2);
+  process.stdout.write(`Rate: ${rate}x`);
+}
+
+async function updatePrices() {
+  for (let i = 0; i < tickers.length; i++) {
+    const ticker = tickers[i];
     let quote;
-    try {quote = await res1.json();} 
-    catch (e) {console.log(e);return;};
-    if (count % 250 == 0 && count > 1) {
-      readline.cursorTo(process.stdout,3,45)
-      process.stdout.write(`Data Received: ${count}`);
-      let endTime = Date.now();
-      readline.cursorTo(process.stdout,3,46)
-      let seconds = parseInt((((endTime - startTime) / 1000) % 60),10)
-      seconds = seconds < 10 ? `0${seconds}` : seconds;
-      process.stdout.write(`Time Elapsed: ${(Math.floor(((endTime - startTime) / 1000)/60))}:${seconds}`);
-      readline.cursorTo(process.stdout,3,47)
-      process.stdout.write(`Rate: ${parseInt(count / ((endTime - startTime) / 1000),10)}x`);}
-    if (!quote) {return;}
-    let xposition = 7 + Math.floor(tickers.indexOf(singleticker) / rows) * columnwidth;
-    readline.cursorTo(process.stdout,xposition, tickers.indexOf(singleticker) % rows);
-    process.stdout.write(`\x1b[37m${quote.price.toFixed(2)}${randchars[Math.floor(Math.random() * 10)]}`);
-    count++;}}
+
+    try {
+      const response = await fetch(`${API_URL}/stockc/${ticker}`);
+      quote = await response.json();
+    } catch {
+      return;
+    }
+
+    if (!quote) return;
+
+    const column = Math.floor(i / rowsPerColumn);
+    const row = i % rowsPerColumn;
+    const priceText = `${quote.price.toFixed(2)}${specialChars[Math.floor(Math.random() * specialChars.length)]}`;
+
+    readline.cursorTo(process.stdout, (column + 1) * columnWidth - 13, row);
+    process.stdout.write(`\x1b[37m${priceText}`);
+    
+    fetchCount++;
+
+    if (fetchCount % 250 === 0) logStats();
+  }
+}
+
+drawTickers();
+readline.cursorTo(process.stdout, 0, statusLine);
+console.log(" ");
+setInterval(updatePrices, 500);
